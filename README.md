@@ -26,6 +26,4 @@ The README.md is kept up-to-date with `cargo readme > README.md`
 - [ ] moka cache for blocks
 - [ ] petgraph for tracking forks?
 - [ ] retry rather than exit
-
-
-
+- [ ] handle orphaned transactions

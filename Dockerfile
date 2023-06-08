@@ -29,6 +29,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo install \
     --locked \
     --no-default-features \
+    --path . \
     --root /usr/local/bin
 
 #

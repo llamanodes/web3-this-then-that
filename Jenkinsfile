@@ -8,7 +8,7 @@ pipeline {
     environment {
         // AWS_ECR_URL needs to be set in jenkin's config.
         // AWS_ECR_URL could really be any docker registry. we just use ECR so that we don't have to manage it
-        REGISTRY="${AWS_ECR_URL}/erigon"
+        REGISTRY="${AWS_ECR_URL}/web3-this-then-that"
 
         // branch that should get tagged with "latest_$arch" (stable, main, master, etc.)
         LATEST_BRANCH="stable"

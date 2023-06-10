@@ -44,9 +44,8 @@ RUN mkdir /llama \
 
 USER llama
 
-ENTRYPOINT ["web3_proxy_payment_watcher"]
-CMD [ "--config", "/config.toml", "daemon" ]
+ENTRYPOINT ["web3_this_then_that"]
 
-ENV RUST_LOG "warn,web3_proxy_payment_watcher=debug"
+ENV RUST_LOG "warn,web3_this_then_that=debug"
 
 COPY --from=builder /usr/local/bin/* /usr/local/bin/

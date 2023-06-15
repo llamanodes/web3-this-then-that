@@ -38,10 +38,10 @@ use futures::future::try_join_all;
 use reqwest::Client;
 use sentry::types::Dsn;
 use serde::Deserialize;
-use std::{env, str::FromStr, sync::Arc, time::Duration};
+use std::{env, sync::Arc, time::Duration};
 use tokio::time::sleep;
-use tracing::{debug, error, info, info_span, trace, Instrument, Level};
-use tracing_subscriber::{prelude::*, EnvFilter, FmtSubscriber};
+use tracing::{debug, error, info, info_span, trace, Instrument};
+use tracing_subscriber::{prelude::*, EnvFilter};
 
 type EthersProviderWs = Provider<Ws>;
 
@@ -73,14 +73,16 @@ async fn main() -> anyhow::Result<()> {
         ..Default::default()
     });
 
-    // create a subscriber that uses the RUST_LOG env var for setting levels
-    // print a compact output to the terminal
-    // Register the Sentry tracing layer to capture breadcrumbs, events, and spans
     tracing_subscriber::fmt()
+        // create a subscriber that uses the RUST_LOG env var for filtering levels
         .with_env_filter(EnvFilter::from_default_env())
+        // print a pretty output to the terminal
+        .pretty()
+        // the root subscriber is ready
         .finish()
-        .with(tracing_subscriber::fmt::layer().compact())
+        // Register the Sentry tracing layer to capture breadcrumbs, events, and spans
         .with(sentry_tracing::layer())
+        // register as the default global subscriber
         .init();
 
     let proxy_urls = env::var("W3TTT_PROXY_URLS")
@@ -117,6 +119,10 @@ async fn run_forever(http_client: Client, proxy_url: String) {
 }
 
 async fn run(http_client: &Client, proxy_url: &str) -> anyhow::Result<()> {
+    if proxy_url.starts_with("http") || proxy_url.starts_with("ws") {
+        panic!("invalid proxy_url. do not include the scheme");
+    }
+
     let (http_scheme, ws_scheme) = if proxy_url.contains("localhost") {
         ("http", "ws")
     } else {
@@ -157,17 +163,28 @@ async fn run(http_client: &Client, proxy_url: &str) -> anyhow::Result<()> {
         .get_block(41380731)
         .await
         .context("failed fetching last processed block")?
-        .context("last_processed block should always exist")?;
+        .context(
+            "last_processed block should always exist. Check the chain (polygon only for now)",
+        )?;
 
     let factory = LlamaNodes_PaymentContracts_Factory::new(factory_address, provider.clone());
 
     let mut new_heads_sub = provider.subscribe_blocks().await?;
 
     while let Some(new_head) = new_heads_sub.next().await {
+        // the block header does not contain everything in the block. we need to call get_block for that
+        let new_block = provider
+            .get_block(new_head.hash.unwrap())
+            .await
+            .context("failed fetching new block")?
+            .context("there should always be a block")?;
+
+        debug!("new_block: {:#?}", new_block);
+
         // TODO: will need to handle reorgs. will need to find the common ancestor
         // TODO: lag by X blocks
-        let new_head_number = new_head.number.unwrap().as_u64();
-        let new_head_hash = new_head.hash.unwrap();
+        let new_head_number = new_block.number.unwrap().as_u64();
+        let new_head_hash = new_block.hash.unwrap();
 
         let last_number = last_processed.number.unwrap().as_u64();
         let last_hash = last_processed.hash.unwrap();
@@ -202,16 +219,16 @@ async fn run(http_client: &Client, proxy_url: &str) -> anyhow::Result<()> {
 
         let span = info_span!(
             "process_block",
-            num=%new_head.number.unwrap(),
-            hash=?new_head.hash.unwrap(),
+            num=%new_block.number.unwrap(),
+            hash=?new_block.hash.unwrap(),
             http_url,
         );
 
-        process_block(&new_head, http_client, &factory, &http_url)
+        process_block(&new_block, http_client, &factory, &http_url)
             .instrument(span)
             .await?;
 
-        last_processed = new_head;
+        last_processed = new_block;
 
         // TODO: save last_processed somewhere external in case this process exits
     }
@@ -226,6 +243,9 @@ pub async fn process_block(
     proxy_http_url: &str,
 ) -> anyhow::Result<()> {
     debug!("checking logs_bloom");
+
+    // TODO: process uncles
+    // let uncles_logs_bloom =
 
     // TODO: can we check multiple inputs at the same time?
     let logs_bloom = block

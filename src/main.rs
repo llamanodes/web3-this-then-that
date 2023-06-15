@@ -36,10 +36,12 @@ use ethers::{
 };
 use futures::future::try_join_all;
 use reqwest::Client;
+use sentry::types::Dsn;
 use serde::Deserialize;
-use std::{env, sync::Arc, time::Duration};
+use std::{env, str::FromStr, sync::Arc, time::Duration};
 use tokio::time::sleep;
-use tracing::{debug, error, info, info_span, trace, Instrument};
+use tracing::{debug, error, info, info_span, trace, Instrument, Level};
+use tracing_subscriber::{prelude::*, EnvFilter, FmtSubscriber};
 
 type EthersProviderWs = Provider<Ws>;
 
@@ -53,10 +55,33 @@ abigen!(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
-
     // use dotenv to get config
     let _ = dotenv().ok();
+
+    // optional, but if sentry dsn is set, it MUST parse
+    let sentry_dsn = env::var("W3TTT_SENTRY_DSN")
+        .ok()
+        .map(|x| x.parse::<Dsn>().unwrap());
+
+    // set up sentry connection
+    let _sentry_guard = sentry::init(sentry::ClientOptions {
+        dsn: sentry_dsn,
+        release: sentry::release_name!(),
+        // Enable capturing of traces
+        // we set to 100% here while we develop, but production will likely want to configure this smaller
+        traces_sample_rate: 1.0,
+        ..Default::default()
+    });
+
+    // create a subscriber that uses the RUST_LOG env var for setting levels
+    // print a compact output to the terminal
+    // Register the Sentry tracing layer to capture breadcrumbs, events, and spans
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .finish()
+        .with(tracing_subscriber::fmt::layer().compact())
+        .with(sentry_tracing::layer())
+        .init();
 
     let proxy_urls = env::var("W3TTT_PROXY_URLS")
         .context("Setting W3TTT_PROXY_URLS in your environment is required")?;

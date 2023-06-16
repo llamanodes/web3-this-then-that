@@ -244,8 +244,19 @@ pub async fn process_block(
 ) -> anyhow::Result<()> {
     debug!("checking logs_bloom");
 
-    // TODO: process uncles
-    // let uncles_logs_bloom =
+    for uncle in block.uncles.iter() {
+        // TODO: get the uncle data and only post if they pass the log bloom filter
+        let r = http_client
+            .post(format!("{}/user/balance_uncle/{:?}", proxy_http_url, uncle))
+            .send()
+            .await?;
+
+        info!(?r, "uncle submitted");
+
+        let j = r.text().await?;
+
+        info!(?j, "uncle submitted");
+    }
 
     // TODO: can we check multiple inputs at the same time?
     let logs_bloom = block

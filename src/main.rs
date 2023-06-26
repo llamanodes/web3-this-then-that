@@ -27,25 +27,26 @@
 //! - [ ] handle orphaned transactions
 //!
 use anyhow::Context;
+use deadpool_redis::{redis::AsyncCommands, Config, Pool, Runtime};
 use dotenv::dotenv;
 use ethers::{
     abi::ethereum_types::BloomInput,
     prelude::{abigen, LogMeta},
     providers::{Middleware, Provider, StreamExt, Ws},
-    types::{Address, Block, TxHash, ValueOrArray},
+    types::{Address, Block, TxHash, ValueOrArray, H256, U64},
 };
 use futures::future::try_join_all;
 use reqwest::Client;
 use sentry::types::Dsn;
 use serde::Deserialize;
-use std::{env, sync::Arc, time::Duration};
+use std::{cmp::Ordering, env, sync::Arc, time::Duration};
 use tokio::time::sleep;
 use tracing::{debug, error, info, info_span, trace, Instrument};
 use tracing_subscriber::{prelude::*, EnvFilter};
 
 type EthersProviderWs = Provider<Ws>;
 
-// TODO: do this at runtime so we can listen to multiple events
+// TODO: refactor to listen to arbitrary events
 abigen!(
     LlamaNodes_PaymentContracts_Factory,
     r#"[
@@ -53,15 +54,30 @@ abigen!(
     ]"#
 );
 
+fn redis_pool<T: Into<String>>(url: T) -> Arc<Pool> {
+    let cfg = Config::from_url(url);
+
+    let pool = cfg.create_pool(Some(Runtime::Tokio1)).unwrap();
+
+    Arc::new(pool)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // use dotenv to get config
     let _ = dotenv().ok();
 
+    // parse values from the config
     // optional, but if sentry dsn is set, it MUST parse
     let sentry_dsn = env::var("W3TTT_SENTRY_DSN")
         .ok()
         .map(|x| x.parse::<Dsn>().unwrap());
+
+    let proxy_urls = env::var("W3TTT_PROXY_URLS")
+        .context("Setting W3TTT_PROXY_URLS in your environment is required")?;
+
+    // optional
+    let redis_url = env::var("W3TTT_REDIS_URL").ok();
 
     // set up sentry connection
     let _sentry_guard = sentry::init(sentry::ClientOptions {
@@ -85,16 +101,16 @@ async fn main() -> anyhow::Result<()> {
         // register as the default global subscriber
         .init();
 
-    let proxy_urls = env::var("W3TTT_PROXY_URLS")
-        .context("Setting W3TTT_PROXY_URLS in your environment is required")?;
-
     let http_client = reqwest::Client::new();
+    let redis_pool = redis_url.map(redis_pool);
+    // TODO: prometheus metrics?
 
     let handles = proxy_urls.split(',').map(|proxy_url| {
-        let f = run_forever(http_client.clone(), proxy_url.to_owned());
-
-        // TODO: prometheus metrics?
-        // TODO: dotfile exporter for the chain?
+        let f = run_forever(
+            http_client.clone(),
+            proxy_url.to_owned(),
+            redis_pool.clone(),
+        );
 
         tokio::spawn(f)
     });
@@ -106,19 +122,25 @@ async fn main() -> anyhow::Result<()> {
 
 #[derive(Deserialize)]
 struct StatusPage {
+    chain_id: u64,
+    head_num: Option<U64>,
     payment_factory_address: Option<Address>,
 }
 
-async fn run_forever(http_client: Client, proxy_url: String) {
+async fn run_forever(http_client: Client, proxy_url: String, redis_pool: Option<Arc<Pool>>) {
     loop {
-        if let Err(err) = run(&http_client, &proxy_url).await {
+        if let Err(err) = run(&http_client, &proxy_url, redis_pool.as_deref()).await {
             error!("{} errored! {:?}", proxy_url, err);
         }
-        sleep(Duration::from_secs(10)).await;
+        sleep(Duration::from_secs(60)).await;
     }
 }
 
-async fn run(http_client: &Client, proxy_url: &str) -> anyhow::Result<()> {
+async fn run(
+    http_client: &Client,
+    proxy_url: &str,
+    redis_pool: Option<&Pool>,
+) -> anyhow::Result<()> {
     if proxy_url.starts_with("http") || proxy_url.starts_with("ws") {
         panic!("invalid proxy_url. do not include the scheme");
     }
@@ -142,11 +164,11 @@ async fn run(http_client: &Client, proxy_url: &str) -> anyhow::Result<()> {
         .await
         .context("unexpected format of /status")?;
 
-    let factory_address = status_json.payment_factory_address.unwrap_or_else(|| {
-        "0x4e3BC2054788De923A04936C6ADdB99A05B0Ea36"
-            .parse()
-            .unwrap()
-    });
+    let factory_address = status_json
+        .payment_factory_address
+        .ok_or(anyhow::anyhow!("no factory address"))?;
+
+    let chain_id = status_json.chain_id;
 
     // TODO: acquire mysql lock? multiple reports for the same transaction doesn't really hurt anything
 
@@ -157,15 +179,18 @@ async fn run(http_client: &Client, proxy_url: &str) -> anyhow::Result<()> {
             .context("failed connecting to websocket")?,
     );
 
-    // TODO: query mysql (or maybe redis) to know the last row we processed
-    // 40157242 (march 9, 2023) is when 0x4e3bc2054788de923a04936c6addb99a05b0ea36 was created
-    let mut last_processed = provider
-        .get_block(41380731)
-        .await
-        .context("failed fetching last processed block")?
-        .context(
-            "last_processed block should always exist. Check the chain (polygon only for now)",
-        )?;
+    let head_block_num = status_json
+        .head_num
+        .ok_or(anyhow::anyhow!("no head block"))?;
+
+    let mut last_processed = LastProcessed::try_new(
+        chain_id,
+        &factory_address,
+        &head_block_num,
+        &provider,
+        redis_pool,
+    )
+    .await?;
 
     let factory = LlamaNodes_PaymentContracts_Factory::new(factory_address, provider.clone());
 
@@ -186,17 +211,17 @@ async fn run(http_client: &Client, proxy_url: &str) -> anyhow::Result<()> {
         let new_head_number = new_block.number.unwrap().as_u64();
         let new_head_hash = new_block.hash.unwrap();
 
-        let last_number = last_processed.number.unwrap().as_u64();
-        let last_hash = last_processed.hash.unwrap();
+        // TODO: don't unwrap
+        let last_number = last_processed.number().unwrap();
+        let last_hash = *last_processed.hash().unwrap();
 
         if new_head_hash == last_hash {
             // we've already seen this block
             continue;
         }
 
-        // TODO: don't exit on error. sleep and retry
         for i in last_number..new_head_number {
-            let block = provider
+            let old_block = provider
                 .get_block(i)
                 .await
                 .context("failed fetching old block")?
@@ -204,17 +229,16 @@ async fn run(http_client: &Client, proxy_url: &str) -> anyhow::Result<()> {
 
             let span = info_span!(
                 "process_block",
-                num=%block.number.unwrap(),
-                hash=?block.hash.unwrap(),
+                num=%old_block.number.unwrap(),
+                hash=?old_block.hash.unwrap(),
                 http_url,
             );
 
-            process_block(&block, http_client, &factory, &http_url)
+            process_block(&old_block, http_client, &factory, &http_url)
                 .instrument(span)
                 .await?;
 
-            // TODO: save last_processed somewhere external in case this process exits
-            last_processed = block;
+            last_processed.set(old_block).await?;
         }
 
         let span = info_span!(
@@ -228,12 +252,141 @@ async fn run(http_client: &Client, proxy_url: &str) -> anyhow::Result<()> {
             .instrument(span)
             .await?;
 
-        last_processed = new_block;
-
-        // TODO: save last_processed somewhere external in case this process exits
+        last_processed.set(new_block).await?;
     }
 
     Ok(())
+}
+
+struct LastProcessed<'a> {
+    block: Block<TxHash>,
+    num_key: String,
+    hash_key: String,
+    redis_pool: Option<&'a Pool>,
+}
+
+impl<'a> LastProcessed<'a> {
+    async fn try_new(
+        chain_id: u64,
+        factory_address: &Address,
+        head_block_num: &U64,
+        provider: &EthersProviderWs,
+        redis_pool: Option<&'a Pool>,
+    ) -> anyhow::Result<LastProcessed<'a>> {
+        let num_key = format!("W3TTT:{}:{:?}:LastProcessedNum", chain_id, factory_address);
+        let hash_key = format!("W3TTT:{}:{:?}:LastProcessedHash", chain_id, factory_address);
+
+        // get the block hash from the redis
+        // TODO: something more durable than redis could work, but re-running this isn't that big of a problem
+        let mut last_block_hash_or_number = if let Some(redis_pool) = redis_pool {
+            let mut conn = redis_pool.get().await?;
+
+            let x: Option<String> = conn.get(&num_key).await?;
+
+            let x: Option<U64> = x.map(|x| serde_json::from_str(&x).unwrap());
+
+            x
+        } else {
+            None
+        };
+
+        // if no data in redis, find when the factory was deployed
+        if last_block_hash_or_number.is_none() {
+            let deploy_block_num =
+                binary_search_eth_get_code(provider, factory_address, head_block_num).await?;
+
+            last_block_hash_or_number = Some(deploy_block_num)
+        }
+
+        let last_block_hash_or_number = last_block_hash_or_number.context("no block")?;
+
+        let block = provider
+            .get_block(last_block_hash_or_number)
+            .await
+            .context("failed fetching last processed block")?
+            .context("last_processed block should always exist. Check the chain")?;
+
+        let last_processed = Self {
+            block,
+            num_key,
+            hash_key,
+            redis_pool,
+        };
+
+        Ok(last_processed)
+    }
+
+    fn number(&self) -> Option<u64> {
+        self.block.number.map(|x| x.as_u64())
+    }
+
+    fn hash(&self) -> Option<&H256> {
+        self.block.hash.as_ref()
+    }
+
+    async fn set(&mut self, new: Block<TxHash>) -> anyhow::Result<()> {
+        self.block = new;
+
+        // TODO: save last_processed somewhere external in case this process exits
+        if let Some(pool) = self.redis_pool {
+            let mut conn = pool.get().await?;
+
+            // TODO: pipe and set them together atomically
+            let _: Option<String> = conn.set(&self.num_key, self.number().unwrap()).await?;
+            let _: Option<String> = conn
+                .set(&self.hash_key, self.hash().unwrap().to_string())
+                .await?;
+        }
+
+        Ok(())
+    }
+}
+
+async fn binary_search_eth_get_code(
+    provider: &EthersProviderWs,
+    factory_address: &Address,
+    head_block: &U64,
+) -> anyhow::Result<U64> {
+    let mut low_block_num: U64 = 1.into();
+    let mut high_block_num: U64 = *head_block;
+
+    while low_block_num < high_block_num {
+        let middle_block_num = (high_block_num + low_block_num) / 2;
+
+        let middle_get_code = provider
+            .get_code(*factory_address, Some(middle_block_num.into()))
+            .await?;
+
+        // TODO: only bother getting prev_get_code if middle_get_code is not empty
+        let prev_get_code = provider
+            .get_code(*factory_address, Some((middle_block_num - 1).into()))
+            .await?;
+
+        let k = match (prev_get_code.is_empty(), middle_get_code.is_empty()) {
+            (false, true) => {
+                // the middle block has the code, but the previous block does not. success!
+                Ordering::Equal
+            }
+            (true, true) => {
+                // middle block does not have the code
+                // prev can't if middle doesn't (at least for our non-selfdestruct contracts)
+                Ordering::Less
+            }
+            (false, false) => {
+                // both blocks have the code
+                Ordering::Greater
+            }
+            (true, false) => unimplemented!(),
+        };
+
+        match k {
+            Ordering::Equal => return Ok(middle_block_num),
+            Ordering::Greater => high_block_num = middle_block_num,
+            Ordering::Less => low_block_num = middle_block_num + 1,
+        }
+    }
+
+    Err(anyhow::anyhow!("code not found!"))
 }
 
 pub async fn process_block(

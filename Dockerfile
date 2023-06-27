@@ -2,35 +2,52 @@ FROM rust:1.70.0-bullseye AS builder
 
 WORKDIR /app
 ENV CARGO_TERM_COLOR always
+ENV PATH /root/.foundry/bin:$PATH
 
 # a next-generation test runner for Rust projects.
 # We only pay the installation cost once, 
 # TODO: do this in a seperate FROM and COPY it in
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    \
     cargo install cargo-nextest
 
 # foundry is needed to run tests
 # TODO: do this in a seperate FROM and COPY it in
-ENV PATH /root/.foundry/bin:$PATH
-RUN curl -L https://foundry.paradigm.xyz | bash && foundryup
+RUN --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    \
+    curl -L https://foundry.paradigm.xyz | bash && foundryup
 
-# copy the application
-COPY . .
+FROM builder as build_tests
 
 # test the application with cargo-nextest
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target \
-    cargo nextest run
+RUN --mount=type=bind,target=.,rw \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target,sharing=private \
+    \
+    cargo nextest run && \
+    touch /test_success
+
+FROM builder as build_app
 
 # build the application
 # using a "release" profile (which install does) is **very** important
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target \
+RUN --mount=type=bind,target=.,rw \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target,sharing=private \
+    \
     cargo install \
     --locked \
     --no-default-features \
     --path . \
     --root /usr/local/bin
+
+# copy this file so that docker actually creates the build_tests container
+# without this, the runtime container doesn't need build_tests and so docker build skips it
+COPY --from=build_tests /test_success /
 
 #
 # We do not need the Rust toolchain to run the binary!
@@ -48,4 +65,4 @@ ENTRYPOINT ["web3_this_then_that"]
 
 ENV RUST_LOG "warn,web3_this_then_that=debug"
 
-COPY --from=builder /usr/local/bin/* /usr/local/bin/
+COPY --from=build_app /usr/local/bin/* /usr/local/bin/

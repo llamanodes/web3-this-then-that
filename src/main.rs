@@ -41,7 +41,7 @@ use sentry::types::Dsn;
 use serde::Deserialize;
 use std::{cmp::Ordering, env, sync::Arc, time::Duration};
 use tokio::time::sleep;
-use tracing::{debug, error, info, info_span, trace, Instrument};
+use tracing::{debug, error, info, info_span, trace, warn, Instrument};
 use tracing_subscriber::{prelude::*, EnvFilter};
 
 type EthersProviderWs = Provider<Ws>;
@@ -78,6 +78,10 @@ async fn main() -> anyhow::Result<()> {
 
     // optional
     let redis_url = env::var("W3TTT_REDIS_URL").ok();
+
+    if redis_url.is_none() {
+        warn!("W3TTT_REDIS_URL is not set! Last processed block will not survive restarts");
+    }
 
     // set up sentry connection
     let _sentry_guard = sentry::init(sentry::ClientOptions {
@@ -121,9 +125,9 @@ async fn main() -> anyhow::Result<()> {
 }
 
 #[derive(Deserialize)]
-struct StatusPage {
+struct StatusJson {
     chain_id: u64,
-    head_num: Option<U64>,
+    head_block_num: Option<U64>,
     payment_factory_address: Option<Address>,
 }
 
@@ -156,19 +160,38 @@ async fn run(
 
     let status_url = format!("{}/status", http_url);
 
-    let status_json: StatusPage = http_client
-        .get(status_url)
+    let mut status_json: StatusJson = http_client
+        .get(&status_url)
         .send()
         .await?
         .json()
         .await
         .context("unexpected format of /status")?;
 
-    let factory_address = status_json
-        .payment_factory_address
-        .ok_or(anyhow::anyhow!("no factory address"))?;
-
     let chain_id = status_json.chain_id;
+
+    let mut factory_address = status_json.payment_factory_address;
+
+    while factory_address.is_none() {
+        warn!(
+            "no factory address for chain {}. Trying again in 60 seconds",
+            chain_id
+        );
+
+        sleep(Duration::from_secs(60)).await;
+
+        status_json = http_client
+            .get(&status_url)
+            .send()
+            .await?
+            .json()
+            .await
+            .context("unexpected format of /status")?;
+
+        factory_address = status_json.payment_factory_address;
+    }
+
+    let factory_address = factory_address.unwrap();
 
     // TODO: acquire mysql lock? multiple reports for the same transaction doesn't really hurt anything
 
@@ -180,8 +203,8 @@ async fn run(
     );
 
     let head_block_num = status_json
-        .head_num
-        .ok_or(anyhow::anyhow!("no head block"))?;
+        .head_block_num
+        .ok_or(anyhow::anyhow!("no head block in status"))?;
 
     let mut last_processed = LastProcessed::try_new(
         chain_id,
@@ -204,7 +227,7 @@ async fn run(
             .context("failed fetching new block")?
             .context("there should always be a block")?;
 
-        debug!("new_block: {:#?}", new_block);
+        debug!(new_hash=?new_block.hash, new_num=?new_block.number);
 
         // TODO: will need to handle reorgs. will need to find the common ancestor
         // TODO: lag by X blocks
@@ -281,6 +304,7 @@ impl<'a> LastProcessed<'a> {
         let mut last_block_hash_or_number = if let Some(redis_pool) = redis_pool {
             let mut conn = redis_pool.get().await?;
 
+            // TODO: do something with hash_key?
             let x: Option<String> = conn.get(&num_key).await?;
 
             let x: Option<U64> = x.map(|x| serde_json::from_str(&x).unwrap());
@@ -332,6 +356,7 @@ impl<'a> LastProcessed<'a> {
             let mut conn = pool.get().await?;
 
             // TODO: pipe and set them together atomically
+            // TODO: only set if number is > the current number
             let _: Option<String> = conn.set(&self.num_key, self.number().unwrap()).await?;
             let _: Option<String> = conn
                 .set(&self.hash_key, self.hash().unwrap().to_string())
@@ -353,6 +378,8 @@ async fn binary_search_eth_get_code(
     while low_block_num < high_block_num {
         let middle_block_num = (high_block_num + low_block_num) / 2;
 
+        trace!("checking for {:?} @ {}", factory_address, middle_block_num);
+
         let middle_get_code = provider
             .get_code(*factory_address, Some(middle_block_num.into()))
             .await?;
@@ -363,7 +390,7 @@ async fn binary_search_eth_get_code(
             .await?;
 
         let k = match (prev_get_code.is_empty(), middle_get_code.is_empty()) {
-            (false, true) => {
+            (true, false) => {
                 // the middle block has the code, but the previous block does not. success!
                 Ordering::Equal
             }
@@ -376,7 +403,7 @@ async fn binary_search_eth_get_code(
                 // both blocks have the code
                 Ordering::Greater
             }
-            (true, false) => unimplemented!(),
+            (false, true) => unimplemented!(),
         };
 
         match k {

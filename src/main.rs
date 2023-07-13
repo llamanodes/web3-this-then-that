@@ -436,6 +436,9 @@ pub async fn process_block(
         let j = r.text().await?;
 
         info!(?j, "uncle submitted");
+
+        // basic DOS protection
+        sleep(Duration::from_millis(10)).await;
     }
 
     // TODO: can we check multiple inputs at the same time?
@@ -502,6 +505,9 @@ pub async fn process_block(
         let j = r.text().await?;
 
         info!(?j, "transaction submitted");
+
+        // basic DOS protection
+        sleep(Duration::from_millis(10)).await;
     }
 
     Ok(())

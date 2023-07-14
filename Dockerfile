@@ -78,7 +78,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/git \
     --root /usr/local \
     --verbose \
     ; \
-    /usr/local/bin/web3-this-then-that --help | grep 'Usage: web3_this_then_that'
+    W3TTT_PROXY_URLS="" /usr/local/bin/web3-this-then-that --help | grep 'Usage: web3-this-then-that'
 
 # copy this file so that docker actually creates the build_tests container
 # without this, the runtime container doesn't need build_tests and so docker build skips it
@@ -105,4 +105,4 @@ ENV RUST_LOG "warn,web3_this_then_that=debug"
 COPY --from=build_app /usr/local/bin/* /usr/local/bin/
 
 # make sure the app works
-RUN web3-this-then-that --help
+RUN W3TTT_PROXY_URLS="" web3-this-then-that --help

@@ -1,63 +1,100 @@
 FROM rust:1.70.0-bullseye AS builder
 
 WORKDIR /app
+ENV CARGO_UNSTABLE_SPARSE_REGISTRY true
 ENV CARGO_TERM_COLOR always
-ENV PATH /root/.foundry/bin:$PATH
+ENV PATH "/root/.foundry/bin:${PATH}"
 
-# a next-generation test runner for Rust projects.
-# We only pay the installation cost once, 
-# TODO: do this in a seperate FROM and COPY it in
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
+# nextest runs tests in parallel (done its in own FROM so that it can run in parallel)
+FROM rust as rust_nextest
+RUN --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/root/.cargo/registry \
+    set -eux; \
     \
-    cargo install cargo-nextest
+    cargo install --locked cargo-nextest
 
-# foundry is needed to run tests
-# TODO: do this in a seperate FROM and COPY it in
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
+# foundry/anvil are needed to run tests (done its in own FROM so that it can run in parallel)
+FROM rust as rust_foundry
+RUN --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/root/.cargo/registry \
+    set -eux; \
     \
-    curl -L https://foundry.paradigm.xyz | bash && foundryup
+    curl -L https://foundry.paradigm.xyz | bash && /root/.foundry/bin/foundryup
 
-FROM builder as build_tests
+FROM rust as rust_with_env
+
+# changing our features doesn't change any of the steps above
+ENV WEB3_PROXY_FEATURES ""
+
+# copy the app
+COPY . .
+
+# fetch deps
+RUN --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/app/target \
+    set -eux; \
+    \
+    cargo --locked --verbose fetch
+
+# build tests (done its in own FROM so that it can run in parallel)
+FROM rust_with_env as build_tests
+
+COPY --from=rust_foundry /root/.foundry/bin/anvil /root/.foundry/bin/
+COPY --from=rust_nextest /root/.cargo/bin/cargo-nextest* /root/.cargo/bin/
 
 # test the application with cargo-nextest
-RUN --mount=type=bind,target=.,rw \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target,sharing=private \
+RUN --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/app/target \
+    set -eux; \
     \
-    cargo nextest run && \
+    RUST_LOG=web3_proxy=trace,info \
+    cargo \
+    --frozen \
+    --offline \
+    --verbose \
+    nextest run \
+    --features "$WEB3_PROXY_FEATURES" --no-default-features \
+    ; \
     touch /test_success
 
-FROM builder as build_app
+FROM rust_with_env as build_app
 
-# build the application
-# using a "release" profile (which install does) is **very** important
-RUN --mount=type=bind,target=.,rw \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target,sharing=private \
+# # build the release application
+# # using a "release" profile (which install does by default) is **very** important
+# # TODO: use the "faster_release" profile which builds with `codegen-units = 1` (but compile is SLOW)
+RUN --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/app/target \
+    set -eux; \
     \
     cargo install \
-    --locked \
+    --features "$WEB3_PROXY_FEATURES" \
+    --frozen \
     --no-default-features \
+    --offline \
     --path . \
-    --root /usr/local/bin
+    --root /usr/local \
+    --verbose \
+    ; \
+    /usr/local/bin/web3_this_then_that --help | grep 'Usage: web3_this_then_that'
 
 # copy this file so that docker actually creates the build_tests container
 # without this, the runtime container doesn't need build_tests and so docker build skips it
 COPY --from=build_tests /test_success /
 
 #
-# We do not need the Rust toolchain to run the binary!
+# We do not need the Rust toolchain or any deps to run the binary!
 #
 FROM debian:bullseye-slim AS runtime
 
 # Create llama user to avoid running container with root
-RUN mkdir /llama \
-    && adduser --home /llama --shell /sbin/nologin --gecos '' --no-create-home --disabled-password --uid 1001 llama \
-    && chown -R llama /llama
+RUN set -eux; \
+    \
+    mkdir /llama; \
+    adduser --home /llama --shell /sbin/nologin --gecos '' --no-create-home --disabled-password --uid 1001 llama; \
+    chown -R llama /llama
 
 USER llama
 
@@ -66,3 +103,6 @@ ENTRYPOINT ["web3_this_then_that"]
 ENV RUST_LOG "warn,web3_this_then_that=debug"
 
 COPY --from=build_app /usr/local/bin/* /usr/local/bin/
+
+# make sure the app works
+RUN web3_this_then_that --help

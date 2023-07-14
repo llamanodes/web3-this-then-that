@@ -7,16 +7,16 @@ ENV PATH "/root/.foundry/bin:${PATH}"
 
 # nextest runs tests in parallel (done its in own FROM so that it can run in parallel)
 FROM rust as rust_nextest
-RUN --mount=type=cache,target=/root/.cargo/git \
-    --mount=type=cache,target=/root/.cargo/registry \
+RUN --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
     set -eux; \
     \
     cargo install --locked cargo-nextest
 
 # foundry/anvil are needed to run tests (done its in own FROM so that it can run in parallel)
 FROM rust as rust_foundry
-RUN --mount=type=cache,target=/root/.cargo/git \
-    --mount=type=cache,target=/root/.cargo/registry \
+RUN --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
     set -eux; \
     \
     curl -L https://foundry.paradigm.xyz | bash && /root/.foundry/bin/foundryup
@@ -30,8 +30,8 @@ ENV WEB3_PROXY_FEATURES ""
 COPY . .
 
 # fetch deps
-RUN --mount=type=cache,target=/root/.cargo/git \
-    --mount=type=cache,target=/root/.cargo/registry \
+RUN --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     set -eux; \
     \
@@ -41,11 +41,11 @@ RUN --mount=type=cache,target=/root/.cargo/git \
 FROM rust_with_env as build_tests
 
 COPY --from=rust_foundry /root/.foundry/bin/anvil /root/.foundry/bin/
-COPY --from=rust_nextest /root/.cargo/bin/cargo-nextest* /root/.cargo/bin/
+COPY --from=rust_nextest /usr/local/cargo/bin/cargo-nextest* /usr/local/cargo/bin/
 
 # test the application with cargo-nextest
-RUN --mount=type=cache,target=/root/.cargo/git \
-    --mount=type=cache,target=/root/.cargo/registry \
+RUN --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     set -eux; \
     \
@@ -64,8 +64,8 @@ FROM rust_with_env as build_app
 # # build the release application
 # # using a "release" profile (which install does by default) is **very** important
 # # TODO: use the "faster_release" profile which builds with `codegen-units = 1` (but compile is SLOW)
-RUN --mount=type=cache,target=/root/.cargo/git \
-    --mount=type=cache,target=/root/.cargo/registry \
+RUN --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     set -eux; \
     \

@@ -11,7 +11,7 @@ pipeline {
         REGISTRY="${AWS_ECR_URL}/web3-this-then-that"
 
         // branch that should get tagged with "latest_$arch" (stable, main, master, etc.)
-        LATEST_BRANCH="stable"
+        LATEST_BRANCH="main"
 
         // non-buildkit builds are officially deprecated
         // buildkit is much faster and handles caching much better than the default build process.

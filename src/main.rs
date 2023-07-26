@@ -28,6 +28,7 @@
 //!
 use anyhow::Context;
 use deadpool_redis::{redis::AsyncCommands, Config, Pool, Runtime};
+use derivative::Derivative;
 use dotenv::dotenv;
 use ethers::{
     abi::ethereum_types::BloomInput,
@@ -41,6 +42,7 @@ use sentry::types::Dsn;
 use serde::Deserialize;
 use std::{cmp::Ordering, env, sync::Arc, time::Duration};
 use tokio::time::sleep;
+use tracing::instrument;
 use tracing::{debug, error, info, info_span, trace, warn, Instrument};
 use tracing_subscriber::{prelude::*, EnvFilter};
 
@@ -132,14 +134,17 @@ struct StatusJson {
 }
 
 async fn run_forever(http_client: Client, proxy_url: String, redis_pool: Option<Arc<Pool>>) {
+    info!("starting {}", proxy_url);
     loop {
         if let Err(err) = run(&http_client, &proxy_url, redis_pool.as_deref()).await {
-            error!("{} errored! {:?}", proxy_url, err);
+            error!(?err, "{} errored! {}", proxy_url, err);
         }
         sleep(Duration::from_secs(60)).await;
     }
 }
 
+// TODO: fix this syntax
+#[instrument(skip(http_client, redis_pool))]
 async fn run(
     http_client: &Client,
     proxy_url: &str,
@@ -163,7 +168,8 @@ async fn run(
     let mut status_json: StatusJson = http_client
         .get(&status_url)
         .send()
-        .await?
+        .await
+        .context("unable to get /status")?
         .json()
         .await
         .context("unexpected format of /status")?;
@@ -183,7 +189,8 @@ async fn run(
         status_json = http_client
             .get(&status_url)
             .send()
-            .await?
+            .await
+            .context("unable to get /status")?
             .json()
             .await
             .context("unexpected format of /status")?;
@@ -213,7 +220,10 @@ async fn run(
         &provider,
         redis_pool,
     )
-    .await?;
+    .await
+    .context("failed creating last_processed")?;
+
+    info!(?last_processed);
 
     let factory = LlamaNodes_PaymentContracts_Factory::new(factory_address, provider.clone());
 
@@ -281,10 +291,13 @@ async fn run(
     Ok(())
 }
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 struct LastProcessed<'a> {
     block: Block<TxHash>,
     num_key: String,
     hash_key: String,
+    #[derivative(Debug = "ignore")]
     redis_pool: Option<&'a Pool>,
 }
 

@@ -245,7 +245,7 @@ async fn run(
         let new_head_hash = new_block.hash.unwrap();
 
         // TODO: don't unwrap
-        let last_number = last_processed.number().unwrap();
+        let last_number = last_processed.number().unwrap().as_u64();
         let last_hash = *last_processed.hash().unwrap();
 
         if new_head_hash == last_hash {
@@ -317,10 +317,10 @@ impl<'a> LastProcessed<'a> {
         let mut last_block_hash_or_number = if let Some(redis_pool) = redis_pool {
             let mut conn = redis_pool.get().await?;
 
-            // TODO: do something with hash_key?
+            // TODO: do something with hash_key? do something with an error
             let x: Option<String> = conn.get(&num_key).await?;
 
-            let x: Option<U64> = x.map(|x| serde_json::from_str(&x).unwrap());
+            let x: Option<U64> = x.and_then(|x| serde_json::from_str(&x).ok());
 
             x
         } else {
@@ -353,8 +353,8 @@ impl<'a> LastProcessed<'a> {
         Ok(last_processed)
     }
 
-    fn number(&self) -> Option<u64> {
-        self.block.number.map(|x| x.as_u64())
+    fn number(&self) -> Option<U64> {
+        self.block.number
     }
 
     fn hash(&self) -> Option<&H256> {
@@ -370,7 +370,9 @@ impl<'a> LastProcessed<'a> {
 
             // TODO: pipe and set them together atomically
             // TODO: only set if number is > the current number
-            let _: Option<String> = conn.set(&self.num_key, self.number().unwrap()).await?;
+            let _: Option<String> = conn
+                .set(&self.num_key, self.number().unwrap().to_string())
+                .await?;
             let _: Option<String> = conn
                 .set(&self.hash_key, self.hash().unwrap().to_string())
                 .await?;
@@ -435,7 +437,7 @@ pub async fn process_block(
     factory: &LlamaNodes_PaymentContracts_Factory<EthersProviderWs>,
     proxy_http_url: &str,
 ) -> anyhow::Result<()> {
-    debug!("checking logs_bloom");
+    debug!("processing block");
 
     for uncle in block.uncles.iter() {
         // TODO: get the uncle data and only post if they pass the log bloom filter
@@ -503,6 +505,11 @@ pub async fn process_block(
 
     for (_, log_meta) in logs_with_meta {
         let txid = log_meta.transaction_hash;
+
+        if log_meta.address != factory_address {
+            info!("skipping invalid factory");
+            continue;
+        }
 
         info!(?txid, "submitting transaction");
 

@@ -160,11 +160,15 @@ async fn run(
         ("https", "wss")
     };
 
-    let http_url = format!("{}://{}", http_scheme, proxy_url);
-    let ws_url = format!("{}://{}", ws_scheme, proxy_url);
+    let proxy_url_maybe_with_key = match env::var("W3TTT_RPC_KEY") {
+        Ok(rpc_key) => format!("{}/rpc/{}", proxy_url, rpc_key),
+        Err(_) => proxy_url.to_string(),
+    };
 
-    let status_url = format!("{}/status", http_url);
+    let http_url = format!("{}://{}", http_scheme, proxy_url_maybe_with_key);
+    let ws_url = format!("{}://{}", ws_scheme, proxy_url_maybe_with_key);
 
+    let status_url = format!("{}://{}/status", http_scheme, proxy_url);
     let mut status_json: StatusJson = http_client
         .get(&status_url)
         .send()

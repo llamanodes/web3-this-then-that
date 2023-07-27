@@ -31,7 +31,7 @@ use deadpool_redis::{redis::AsyncCommands, Config, Pool, Runtime};
 use derivative::Derivative;
 use dotenv::dotenv;
 use ethers::{
-    abi::ethereum_types::BloomInput,
+    abi::{ethereum_types::BloomInput, AbiEncode},
     prelude::{abigen, LogMeta},
     providers::{Middleware, Provider, StreamExt, Ws},
     types::{Address, Block, TxHash, ValueOrArray, H256, U64},
@@ -249,7 +249,7 @@ async fn run(
         let new_head_hash = new_block.hash.unwrap();
 
         // TODO: don't unwrap
-        let last_number = last_processed.number().unwrap().as_u64();
+        let last_number = last_processed.number().unwrap();
         let last_hash = *last_processed.hash().unwrap();
 
         if new_head_hash == last_hash {
@@ -268,7 +268,6 @@ async fn run(
                 "process_block",
                 num=%old_block.number.unwrap(),
                 hash=?old_block.hash.unwrap(),
-                http_url,
             );
 
             process_block(&old_block, http_client, &factory, &http_url)
@@ -282,7 +281,6 @@ async fn run(
             "process_block",
             num=%new_block.number.unwrap(),
             hash=?new_block.hash.unwrap(),
-            http_url,
         );
 
         process_block(&new_block, http_client, &factory, &http_url)
@@ -324,7 +322,17 @@ impl<'a> LastProcessed<'a> {
             // TODO: do something with hash_key? do something with an error
             let x: Option<String> = conn.get(&num_key).await?;
 
-            let x: Option<U64> = x.and_then(|x| serde_json::from_str(&x).ok());
+            // TODO: better to U64 encoded as hex, or encode as decimal? decimal seems easier since we aren't using json
+            let x: Option<Result<u64, _>> = x.map(|x| x.parse());
+
+            let x: Option<u64> = match x {
+                Some(Ok(x)) => Some(x),
+                Some(Err(err)) => {
+                    warn!(?err, "unable to parse saved value");
+                    None
+                }
+                None => None,
+            };
 
             x
         } else {
@@ -333,8 +341,12 @@ impl<'a> LastProcessed<'a> {
 
         // if no data in redis, find when the factory was deployed
         if last_block_hash_or_number.is_none() {
+            info!("no last block found. using the deploy block");
+
             let deploy_block_num =
-                binary_search_eth_get_code(provider, factory_address, head_block_num).await?;
+                binary_search_eth_get_code(provider, factory_address, head_block_num)
+                    .await?
+                    .as_u64();
 
             last_block_hash_or_number = Some(deploy_block_num)
         }
@@ -357,8 +369,8 @@ impl<'a> LastProcessed<'a> {
         Ok(last_processed)
     }
 
-    fn number(&self) -> Option<U64> {
-        self.block.number
+    fn number(&self) -> Option<u64> {
+        self.block.number.as_ref().map(|x| x.as_u64())
     }
 
     fn hash(&self) -> Option<&H256> {
@@ -372,14 +384,17 @@ impl<'a> LastProcessed<'a> {
         if let Some(pool) = self.redis_pool {
             let mut conn = pool.get().await?;
 
+            // TODO: i thought we could use u64.encode_hex(), but nope. just store as decimal
+            let num = self.number().unwrap().to_string();
+            let hash = self.hash().unwrap().encode_hex();
+
+            trace!(%num, ?hash, "saving");
+
             // TODO: pipe and set them together atomically
             // TODO: only set if number is > the current number
-            let _: Option<String> = conn
-                .set(&self.num_key, self.number().unwrap().to_string())
-                .await?;
-            let _: Option<String> = conn
-                .set(&self.hash_key, self.hash().unwrap().to_string())
-                .await?;
+            // TODO: use json to store them in one key
+            let _: Option<String> = conn.set(&self.num_key, num).await?;
+            let _: Option<String> = conn.set(&self.hash_key, hash).await?;
         }
 
         Ok(())

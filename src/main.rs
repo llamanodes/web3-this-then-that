@@ -311,8 +311,14 @@ impl<'a> LastProcessed<'a> {
         provider: &EthersProviderWs,
         redis_pool: Option<&'a Pool>,
     ) -> anyhow::Result<LastProcessed<'a>> {
-        let num_key = format!("W3TTT:{}:{:?}:LastProcessedNum", chain_id, factory_address);
-        let hash_key = format!("W3TTT:{}:{:?}:LastProcessedHash", chain_id, factory_address);
+        let num_key = format!(
+            "W3TTT:1:{}:{:?}:LastProcessedNum",
+            chain_id, factory_address
+        );
+        let hash_key = format!(
+            "W3TTT:1:{}:{:?}:LastProcessedHash",
+            chain_id, factory_address
+        );
 
         // get the block hash from the redis
         // TODO: something more durable than redis could work, but re-running this isn't that big of a problem

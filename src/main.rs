@@ -52,7 +52,7 @@ type EthersProviderWs = Provider<Ws>;
 abigen!(
     LlamaNodes_PaymentContracts_Factory,
     r#"[
-        event PaymentReceived(address account, address token, uint256 amount)
+        event PaymentReceived(address indexed account, address token, uint256 amount)
     ]"#
 );
 
@@ -480,7 +480,7 @@ pub async fn process_block(
         .logs_bloom
         .context("blocks here should always have a bloom")?;
 
-    let payment_received_filter = factory.payment_received_filter();
+    let mut payment_received_filter = factory.payment_received_filter();
 
     let payment_received_topic0 = if let ValueOrArray::Value(Some(x)) =
         payment_received_filter.filter.topics[0].as_ref().unwrap()
@@ -514,7 +514,7 @@ pub async fn process_block(
     let block_hash = block.hash.unwrap();
 
     // filter for the logs only on this new head block
-    let payment_received_filter = factory.payment_received_filter().at_block_hash(block_hash);
+    payment_received_filter = payment_received_filter.at_block_hash(block_hash);
 
     // rust-analyzer loses this type
     let logs_with_meta: Vec<(PaymentReceivedFilter, LogMeta)> =

@@ -237,11 +237,22 @@ async fn run(
 
     while let Some(new_head) = new_heads_sub.next().await {
         // the block header does not contain everything in the block. we need to call get_block for that
-        let new_block = provider
-            .get_block(new_head.hash.unwrap())
-            .await
-            .context("failed fetching new block")?
-            .context("there should always be a block")?;
+
+        let new_block;
+
+        loop {
+            match provider.get_block(new_head.hash.unwrap()).await {
+                Ok(Some(x)) => {
+                    new_block = x;
+                    break;
+                }
+                err => {
+                    // TODO: wtf. how is this happening. caching must be fubar
+                    warn!(?err, "no block!");
+                    sleep(Duration::from_secs(1)).await;
+                }
+            }
+        }
 
         debug!(new_hash=?new_block.hash, new_num=?new_block.number);
 
@@ -322,9 +333,18 @@ impl<'a> LastProcessed<'a> {
             chain_id, factory_address
         );
 
+        let mut last_block_hash_or_number = None;
+
+        // TODO: make it easy to force a block number while debugging
+        // if chain_id == 1 {
+        //     last_block_hash_or_number = None;
+        // } else if chain_id == 137 {
+        //     last_block_hash_or_number = Some(45741167);
+        // }
+
         // get the block hash from the redis
         // TODO: something more durable than redis could work, but re-running this isn't that big of a problem
-        let mut last_block_hash_or_number = if let Some(redis_pool) = redis_pool {
+        if let Some(redis_pool) = redis_pool {
             let mut conn = redis_pool.get().await?;
 
             // TODO: do something with hash_key? do something with an error
@@ -342,10 +362,8 @@ impl<'a> LastProcessed<'a> {
                 None => None,
             };
 
-            x
-        } else {
-            None
-        };
+            last_block_hash_or_number = x;
+        }
 
         // if no data in redis, find when the factory was deployed
         if last_block_hash_or_number.is_none() {
@@ -525,8 +543,10 @@ pub async fn process_block(
     payment_received_filter = payment_received_filter.at_block_hash(block_hash);
 
     // rust-analyzer loses this type
-    let logs_with_meta: Vec<(PaymentReceivedFilter, LogMeta)> =
-        payment_received_filter.query_with_meta().await?;
+    let logs_with_meta: Vec<(PaymentReceivedFilter, LogMeta)> = payment_received_filter
+        .query_with_meta()
+        .await
+        .context("parsing logs with metadata")?;
 
     trace!(?logs_with_meta, "from payment received filter");
 
@@ -534,7 +554,7 @@ pub async fn process_block(
         let txid = log_meta.transaction_hash;
 
         if log_meta.address != factory_address {
-            info!("skipping invalid factory");
+            debug!(?log_meta, ?factory_address, "skipping incorrect factory");
             continue;
         }
 

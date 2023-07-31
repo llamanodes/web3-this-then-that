@@ -137,7 +137,9 @@ async fn run_forever(http_client: Client, proxy_url: String, redis_pool: Option<
     info!("starting {}", proxy_url);
     loop {
         if let Err(err) = run(&http_client, &proxy_url, redis_pool.as_deref()).await {
-            error!(?err, "{} errored! {}", proxy_url, err);
+            let backtrace = err.backtrace();
+
+            error!(?err, %backtrace, "{} errored! {}", proxy_url, err);
         }
         sleep(Duration::from_secs(60)).await;
     }

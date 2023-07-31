@@ -98,6 +98,7 @@ USER llama
 
 ENTRYPOINT ["web3-this-then-that"]
 
+ENV RUST_BACKTRACE "1"
 ENV RUST_LOG "warn,web3_this_then_that=debug"
 
 COPY --from=build_app /usr/local/bin/* /usr/local/bin/

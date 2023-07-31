@@ -3686,7 +3686,7 @@ dependencies = [
 
 [[package]]
 name = "web3-this-then-that"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "deadpool-redis",

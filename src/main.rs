@@ -325,11 +325,11 @@ impl<'a> LastProcessed<'a> {
         redis_pool: Option<&'a Pool>,
     ) -> anyhow::Result<LastProcessed<'a>> {
         let num_key = format!(
-            "W3TTT:1:{}:{:?}:LastProcessedNum",
+            "W3TTT:2:{}:{:?}:LastProcessedNum",
             chain_id, factory_address
         );
         let hash_key = format!(
-            "W3TTT:1:{}:{:?}:LastProcessedHash",
+            "W3TTT:2:{}:{:?}:LastProcessedHash",
             chain_id, factory_address
         );
 

@@ -186,7 +186,12 @@ async fn run(
                 err => {
                     // TODO: wtf. how is this happening the first time? and if this is cached, that is very bad!
                     error_count += 1;
-                    error!(?err, %error_count, ?new_hash, "no block!");
+
+                    if error_count == 1 {
+                        warn!(?err, %error_count, ?new_hash, "no block!");
+                    } else {
+                        error!(?err, %error_count, ?new_hash, "no block!");
+                    }
                     sleep(Duration::from_secs(1)).await;
                 }
             }

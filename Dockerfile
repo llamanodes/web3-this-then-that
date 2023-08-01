@@ -1,12 +1,12 @@
-FROM rust:1.70.0-bullseye AS builder
+FROM rust:1.70.0-bullseye AS rust_builder
 
 WORKDIR /app
 ENV CARGO_UNSTABLE_SPARSE_REGISTRY true
 ENV CARGO_TERM_COLOR always
-ENV PATH "/root/.foundry/bin:${PATH}"
+ENV PATH "/root/.foundry/bin:/root/.cargo/bin:${PATH}"
 
 # nextest runs tests in parallel (done its in own FROM so that it can run in parallel)
-FROM rust as rust_nextest
+FROM rust_builder as rust_nextest
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
     set -eux; \
@@ -14,14 +14,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/git \
     cargo install --locked cargo-nextest
 
 # foundry/anvil are needed to run tests (done its in own FROM so that it can run in parallel)
-FROM rust as rust_foundry
+FROM rust_builder as rust_foundry
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
     set -eux; \
     \
     curl -L https://foundry.paradigm.xyz | bash && /root/.foundry/bin/foundryup
 
-FROM rust as rust_with_env
+FROM rust_builder as rust_with_env
 
 # changing our features doesn't change any of the steps above
 ENV WEB3_PROXY_FEATURES ""
@@ -40,7 +40,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/git \
 # build tests (done its in own FROM so that it can run in parallel)
 FROM rust_with_env as build_tests
 
-COPY --from=rust_foundry /root/.foundry/bin/anvil /root/.foundry/bin/
+COPY --from=rust_foundry /root/.foundry/bin/anvil /root/.foundry/bin/anvil
 COPY --from=rust_nextest /usr/local/cargo/bin/cargo-nextest* /usr/local/cargo/bin/
 
 # test the application with cargo-nextest
@@ -49,6 +49,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
     set -eux; \
     \
+    ls -la /root/.foundry/bin/anvil; \
+    echo $PATH; \
+    which anvil; \
     RUST_LOG=web3_proxy=trace,info \
     cargo \
     --frozen \

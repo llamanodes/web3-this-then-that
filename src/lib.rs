@@ -108,6 +108,7 @@ async fn run(
         .get(&status_url)
         .send()
         .await
+        .and_then(|x| x.error_for_status())
         .context("unable to get /status")?
         .json()
         .await
@@ -129,6 +130,7 @@ async fn run(
             .get(&status_url)
             .send()
             .await
+            .and_then(|x| x.error_for_status())
             .context("unable to get /status")?
             .json()
             .await

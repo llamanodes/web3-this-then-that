@@ -41,6 +41,7 @@ async fn test_deposit_txs() {
             17778849,
             vec!["0xb490f9b7f9eb4ce681b4ce5abe5becac7bf05170c264481a178127c1b45820a7"],
         ),
+        (137, 44450755, vec![]),
         (
             137,
             45741168,

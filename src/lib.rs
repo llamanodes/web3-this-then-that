@@ -72,6 +72,7 @@ pub async fn run_forever(http_client: Client, proxy_url: String, redis_pool: Opt
     info!("starting {}", proxy_url);
     loop {
         if let Err(err) = run(&http_client, &proxy_url, redis_pool.as_deref()).await {
+            // TODO: the useful spans are all gone here
             error!(?err, "{} errored! {}", proxy_url, err);
         }
         sleep(Duration::from_secs(60)).await;
@@ -173,6 +174,8 @@ async fn run(
 
         let new_block;
 
+        let mut error_count = 0;
+
         loop {
             let new_hash = new_head.hash.unwrap();
 
@@ -182,14 +185,15 @@ async fn run(
                     break;
                 }
                 err => {
-                    // TODO: wtf. how is this happening. caching must be fubar
-                    error!(?err, ?new_hash, "no block!");
+                    // TODO: wtf. how is this happening the first time? and if this is cached, that is very bad!
+                    error_count += 1;
+                    error!(?err, %error_count, ?new_hash, "no block!");
                     sleep(Duration::from_secs(1)).await;
                 }
             }
         }
 
-        debug!(new_hash=?new_block.hash, new_num=?new_block.number);
+        debug!(new_hash=?new_block.hash, new_num=?new_block.number, %error_count);
 
         // TODO: will need to handle reorgs. will need to find the common ancestor
         // TODO: lag by X blocks
@@ -231,6 +235,7 @@ async fn run(
             hash=?new_block.hash.unwrap(),
         );
 
+        // TODO: if we log the error here, then the span will be included
         process_block(&new_block, http_client, &factory, &http_url)
             .instrument(span)
             .await?;

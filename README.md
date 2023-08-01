@@ -14,6 +14,20 @@ export RUST_LOG=web3_this_then_that=trace,ethers=debug,ethers_providers=trace,in
 cargo run
 ```
 
+## Testing
+
+Quickly run tests:
+
+```rust
+RUST_LOG=web3_this_then_that=trace,ethers=debug,ethers_providers=trace,debug cargo nextest run
+```
+
+Run more tests:
+
+```rust
+RUST_LOG=web3_this_then_that=trace,ethers=debug,ethers_providers=trace,debug cargo nextest run --features tests-needing-llamanodes
+```
+
 ## Development
 
 The README.md is kept up-to-date with `cargo readme > README.md`
@@ -29,4 +43,5 @@ The README.md is kept up-to-date with `cargo readme > README.md`
 - [ ] petgraph for tracking forks?
 - [x] retry rather than exit
 - [ ] handle orphaned transactions
+- [ ] instead of hard coding llamanodes rpcs, allow testing any rpc
 

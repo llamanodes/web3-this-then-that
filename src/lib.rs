@@ -12,6 +12,20 @@
 //! cargo run
 //! ```
 //!
+//! # Testing
+//!
+//! Quickly run tests:
+//!
+//! ```
+//! RUST_LOG=web3_this_then_that=trace,ethers=debug,ethers_providers=trace,debug cargo nextest run
+//! ```
+//!
+//! Run more tests:
+//!
+//! ```
+//! RUST_LOG=web3_this_then_that=trace,ethers=debug,ethers_providers=trace,debug cargo nextest run --features tests-needing-llamanodes
+//! ```
+//!
 //! # Development
 //!
 //! The README.md is kept up-to-date with `cargo readme > README.md`
@@ -27,6 +41,7 @@
 //! - [ ] petgraph for tracking forks?
 //! - [x] retry rather than exit
 //! - [ ] handle orphaned transactions
+//! - [ ] instead of hard coding llamanodes rpcs, allow testing any rpc
 //!
 use anyhow::Context;
 use deadpool_redis::{redis::AsyncCommands, Config, Pool, Runtime};
@@ -494,41 +509,41 @@ pub async fn process_block(
     // filter for the logs only on this new head block
     payment_received_filter = payment_received_filter.at_block_hash(block_hash);
 
-    // rust-analyzer loses this type
-    let logs_with_meta: Vec<(PaymentReceivedFilter, LogMeta)> = payment_received_filter
-        .query_with_meta()
-        .await
-        .context("parsing logs with metadata")?;
+    // rust-analyzer loses this type, so we specify here. its not needed to compile though
+    // so ethereum (or erigon?) gives an empty list, but polygon (or bor?) gives a null
+    if let Ok::<Vec<(_, LogMeta)>, _>(logs_with_meta) =
+        payment_received_filter.query_with_meta().await
+    {
+        trace!(?logs_with_meta, "from payment received filter");
 
-    trace!(?logs_with_meta, "from payment received filter");
+        for (_, log_meta) in logs_with_meta {
+            let txid = log_meta.transaction_hash;
 
-    for (_, log_meta) in logs_with_meta {
-        let txid = log_meta.transaction_hash;
+            if log_meta.address != factory_address {
+                debug!(?log_meta, ?factory_address, "skipping incorrect factory");
+                continue;
+            }
 
-        if log_meta.address != factory_address {
-            debug!(?log_meta, ?factory_address, "skipping incorrect factory");
-            continue;
+            info!(?txid, "submitting transaction");
+
+            // TODO: submit the txid to a new endpoint on web3-proxy
+            // TODO: post in the body instead?
+            let r = http_client
+                .post(format!("{}/user/balance/{:?}", proxy_http_url, txid))
+                .send()
+                .await?;
+
+            info!(?r, "transaction submitted");
+
+            let j = r.text().await?;
+
+            info!(?j, "transaction submitted");
+
+            processed_txs.push(txid);
+
+            // basic DOS protection
+            sleep(Duration::from_millis(10)).await;
         }
-
-        info!(?txid, "submitting transaction");
-
-        // TODO: submit the txid to a new endpoint on web3-proxy
-        // TODO: post in the body instead?
-        let r = http_client
-            .post(format!("{}/user/balance/{:?}", proxy_http_url, txid))
-            .send()
-            .await?;
-
-        info!(?r, "transaction submitted");
-
-        let j = r.text().await?;
-
-        info!(?j, "transaction submitted");
-
-        processed_txs.push(txid);
-
-        // basic DOS protection
-        sleep(Duration::from_millis(10)).await;
     }
 
     Ok(processed_txs)

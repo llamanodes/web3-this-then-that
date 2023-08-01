@@ -5,6 +5,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+tests-needing-llamanodes = []
+
 [dependencies]
 anyhow = "1.0.72"
 deadpool-redis = { version = "0.12.0", features = ["rt_tokio_1", "serde"] }

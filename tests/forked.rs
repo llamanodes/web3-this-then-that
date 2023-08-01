@@ -27,10 +27,12 @@ async fn test_deposit_transaction(
 
     info!(?receipt);
 
+    let block_hash = receipt.block_hash.unwrap();
+
     let block = p
-        .get_block(receipt.block_hash.unwrap())
+        .get_block(block_hash)
         .await?
-        .context("no block")?;
+        .context(format!("no block for {}", block_hash))?;
 
     process_block(&block, c, f, proxy_http_url).await
 }

@@ -72,9 +72,7 @@ pub async fn run_forever(http_client: Client, proxy_url: String, redis_pool: Opt
     info!("starting {}", proxy_url);
     loop {
         if let Err(err) = run(&http_client, &proxy_url, redis_pool.as_deref()).await {
-            let backtrace = err.backtrace();
-
-            error!(?err, %backtrace, "{} errored! {}", proxy_url, err);
+            error!(?err, "{} errored! {}", proxy_url, err);
         }
         sleep(Duration::from_secs(60)).await;
     }
@@ -411,6 +409,7 @@ async fn binary_search_eth_get_code(
     Err(anyhow::anyhow!("code not found!"))
 }
 
+#[instrument(skip(http_client, factory))]
 pub async fn process_block(
     block: &Block<TxHash>,
     http_client: &Client,

@@ -415,10 +415,10 @@ pub async fn process_block(
     http_client: &Client,
     factory: &LlamaNodes_PaymentContracts_Factory<EthersProviderWs>,
     proxy_http_url: &str,
-) -> anyhow::Result<usize> {
+) -> anyhow::Result<Vec<H256>> {
     debug!("processing block");
 
-    let mut count = 0;
+    let mut processed_txs = vec![];
 
     for uncle in block.uncles.iter() {
         // TODO: get the uncle data and only post if they pass the log bloom filter
@@ -444,6 +444,7 @@ pub async fn process_block(
 
     let mut payment_received_filter = factory.payment_received_filter();
 
+    // // TODO: this is wrong. fix this
     // let payment_received_topic0 = if let ValueOrArray::Value(Some(x)) =
     //     payment_received_filter.filter.topics[0].as_ref().unwrap()
     // {
@@ -452,12 +453,12 @@ pub async fn process_block(
     //     panic!("topic0 should always be set");
     // };
 
-    // check the topic bloom first because it has more bits and so hopefully has less common false positives
+    // // check the topic bloom first because it has more bits and so hopefully has less common false positives
     // let topics_bloom_input = BloomInput::Hash(payment_received_topic0.as_fixed_bytes());
 
     // if !logs_bloom.contains_input(topics_bloom_input) {
     //     trace!("block does not contain logs using the payment_received event");
-    //     return Ok(count);
+    //     return Ok(processed_txs);
     // }
 
     // next check the contract address
@@ -466,7 +467,7 @@ pub async fn process_block(
 
     if !logs_bloom.contains_input(address_bloom_input) {
         trace!("block does not contain logs using the factory address");
-        return Ok(count);
+        return Ok(processed_txs);
     }
 
     // bloom filters will never have a false negative
@@ -509,11 +510,11 @@ pub async fn process_block(
 
         info!(?j, "transaction submitted");
 
-        count += 1;
+        processed_txs.push(txid);
 
         // basic DOS protection
         sleep(Duration::from_millis(10)).await;
     }
 
-    Ok(count)
+    Ok(processed_txs)
 }

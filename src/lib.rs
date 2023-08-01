@@ -6,7 +6,9 @@
 //! # Running
 //!
 //! ```bash
-//! export W3TTT_PROXY_URLS=eth.llamarpc.com,polygon.llamarpc.com
+//! export W3TTT_PROXY_URLS=polygon-staging.llamarpc.com
+//! export RUST_BACKTRACE=1
+//! export RUST_LOG=web3_this_then_that=trace,ethers=debug,ethers_providers=trace,info
 //! cargo run
 //! ```
 //!

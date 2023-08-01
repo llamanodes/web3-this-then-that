@@ -183,7 +183,7 @@ async fn run(
                 }
                 err => {
                     // TODO: wtf. how is this happening. caching must be fubar
-                    warn!(?err, ?new_hash, "no block!");
+                    error!(?err, ?new_hash, "no block!");
                     sleep(Duration::from_secs(1)).await;
                 }
             }
@@ -312,7 +312,7 @@ impl<'a> LastProcessed<'a> {
             last_block_hash_or_number = Some(deploy_block_num)
         }
 
-        let last_block_hash_or_number = last_block_hash_or_number.context("no block")?;
+        let last_block_hash_or_number = last_block_hash_or_number.context("no start block")?;
 
         let block = provider
             .get_block(last_block_hash_or_number)

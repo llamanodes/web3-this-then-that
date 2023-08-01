@@ -68,19 +68,18 @@ struct StatusJson {
     payment_factory_address: Option<Address>,
 }
 
+#[instrument(skip(http_client, redis_pool))]
 pub async fn run_forever(http_client: Client, proxy_url: String, redis_pool: Option<Arc<Pool>>) {
     info!("starting {}", proxy_url);
     loop {
         if let Err(err) = run(&http_client, &proxy_url, redis_pool.as_deref()).await {
-            // TODO: the useful spans are all gone here
+            // TODO: the useful spans are all gone here. only proxy_url remains
             error!(?err, "{} errored! {}", proxy_url, err);
         }
         sleep(Duration::from_secs(60)).await;
     }
 }
 
-// TODO: fix this syntax
-#[instrument(skip(http_client, redis_pool))]
 async fn run(
     http_client: &Client,
     proxy_url: &str,

@@ -174,14 +174,16 @@ async fn run(
         let new_block;
 
         loop {
-            match provider.get_block(new_head.hash.unwrap()).await {
+            let new_hash = new_head.hash.unwrap();
+
+            match provider.get_block(new_hash).await {
                 Ok(Some(x)) => {
                     new_block = x;
                     break;
                 }
                 err => {
                     // TODO: wtf. how is this happening. caching must be fubar
-                    warn!(?err, "no block!");
+                    warn!(?err, ?new_hash, "no block!");
                     sleep(Duration::from_secs(1)).await;
                 }
             }

@@ -16,13 +16,13 @@
 //!
 //! Quickly run tests:
 //!
-//! ```
+//! ```bash
 //! RUST_LOG=web3_this_then_that=trace,ethers=debug,ethers_providers=trace,debug cargo nextest run
 //! ```
 //!
 //! Run more tests:
 //!
-//! ```
+//! ```bash
 //! RUST_LOG=web3_this_then_that=trace,ethers=debug,ethers_providers=trace,debug cargo nextest run --features tests-needing-llamanodes
 //! ```
 //!
@@ -54,6 +54,7 @@ use ethers::{
 };
 use reqwest::Client;
 use serde::Deserialize;
+use std::fmt::{Debug, Formatter};
 use std::{cmp::Ordering, env, sync::Arc, time::Duration};
 use tokio::time::sleep;
 use tracing::instrument;
@@ -187,6 +188,54 @@ async fn run(
 
     let mut new_heads_sub = provider.subscribe_blocks().await?;
 
+    let new_block = new_heads_sub
+        .next()
+        .await
+        .context("failed fetching new block")?;
+
+    let last_number = last_processed.number().unwrap();
+    let new_head_number = new_block.number.unwrap().as_u64();
+
+    if last_number < new_head_number {
+        warn!(new_head_number, last_number, "need to fetch old blocks",);
+
+        for i in last_number..=new_head_number {
+            let old_block = provider
+                .get_block(i)
+                .await
+                .context("failed fetching old block")?
+                .context("there should always be a block")?;
+
+            let span = info_span!(
+                "process old block",
+                num=%old_block.number.unwrap(),
+                hash=?old_block.hash.unwrap(),
+            );
+
+            process_block(SilentBlock(&old_block), http_client, &factory, &http_url)
+                // TODO: log errors here otherwise the span is gone
+                .instrument(span)
+                .await?;
+
+            last_processed.set(old_block).await?;
+        }
+    }
+
+    let span = info_span!(
+        "process first block from websocket",
+        num=%new_block.number.unwrap(),
+        hash=?new_block.hash.unwrap(),
+    );
+
+    // TODO: if we log the error here, then the span will be included
+    // TODO: what if getting to this point took a long time and this block was forked?
+    process_block(SilentBlock(&new_block), http_client, &factory, &http_url)
+        .instrument(span)
+        // TODO: log errors here otherwise the span is gone
+        .await?;
+
+    last_processed.set(new_block).await?;
+
     while let Some(new_head) = new_heads_sub.next().await {
         // the block header does not contain everything in the block. we need to call get_block for that
 
@@ -220,11 +269,9 @@ async fn run(
 
         // TODO: will need to handle reorgs. will need to find the common ancestor
         // TODO: lag by X blocks
-        let new_head_number = new_block.number.unwrap().as_u64();
         let new_head_hash = new_block.hash.unwrap();
 
         // TODO: don't unwrap
-        let last_number = last_processed.number().unwrap();
         let last_hash = *last_processed.hash().unwrap();
 
         if new_head_hash == last_hash {
@@ -232,38 +279,16 @@ async fn run(
             continue;
         }
 
-        for i in last_number..new_head_number {
-            let old_block = provider
-                .get_block(i)
-                .await
-                .context("failed fetching old block")?
-                .context("there should always be a block")?;
-
-            let span = info_span!(
-                "process_block",
-                num=%old_block.number.unwrap(),
-                hash=?old_block.hash.unwrap(),
-            );
-
-            process_block(&old_block, http_client, &factory, &http_url)
-                .instrument(span)
-                .await?;
-
-            last_processed.set(old_block).await?;
-        }
-
         let span = info_span!(
-            "process_block",
+            "process block from websocket",
             num=%new_block.number.unwrap(),
             hash=?new_block.hash.unwrap(),
         );
 
-        // TODO: if we log the error here, then the span will be included
-        process_block(&new_block, http_client, &factory, &http_url)
+        process_block(SilentBlock(&new_block), http_client, &factory, &http_url)
+            // TODO: log errors here otherwise the span is gone
             .instrument(span)
             .await?;
-
-        last_processed.set(new_block).await?;
     }
 
     Ok(())
@@ -439,14 +464,29 @@ async fn binary_search_eth_get_code(
     Err(anyhow::anyhow!("code not found!"))
 }
 
+/// TODO: this feels wrong. but it works for now
+pub struct SilentBlock<'a>(pub &'a Block<TxHash>);
+
+impl<'a> Debug for SilentBlock<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Block")
+            .field("number", &self.0.number)
+            .field("hash", &self.0.hash)
+            .finish_non_exhaustive()
+    }
+}
+
 #[instrument(skip(http_client, factory))]
-pub async fn process_block(
-    block: &Block<TxHash>,
+pub async fn process_block<'a>(
+    block: SilentBlock<'a>,
     http_client: &Client,
     factory: &LlamaNodes_PaymentContracts_Factory<EthersProviderWs>,
     proxy_http_url: &str,
 ) -> anyhow::Result<Vec<H256>> {
     debug!("processing block");
+
+    // this is gross
+    let SilentBlock(block) = block;
 
     let mut processed_txs = vec![];
 

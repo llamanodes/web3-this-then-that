@@ -9,8 +9,9 @@ but it could be useful generally.
 
 ```bash
 export W3TTT_PROXY_URLS=polygon-staging.llamarpc.com
+export W3TTT_REDIS_URL=redis://127.0.0.1:16379
 export RUST_BACKTRACE=1
-export RUST_LOG=web3_this_then_that=trace,ethers=debug,ethers_providers=trace,info
+export RUST_LOG=web3_this_then_that=trace,ethers=info,ethers_providers=off,info
 cargo run
 ```
 
@@ -18,13 +19,13 @@ cargo run
 
 Quickly run tests:
 
-```rust
+```bash
 RUST_LOG=web3_this_then_that=trace,ethers=debug,ethers_providers=trace,debug cargo nextest run
 ```
 
 Run more tests:
 
-```rust
+```bash
 RUST_LOG=web3_this_then_that=trace,ethers=debug,ethers_providers=trace,debug cargo nextest run --features tests-needing-llamanodes
 ```
 

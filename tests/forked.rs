@@ -8,7 +8,9 @@ use ethers::{
     providers::Middleware,
     types::{Address, H256},
 };
-use web3_this_then_that::{process_block, EthersProviderWs, LlamaNodes_PaymentContracts_Factory};
+use web3_this_then_that::{
+    process_block, EthersProviderWs, LlamaNodes_PaymentContracts_Factory, SilentBlock,
+};
 
 async fn test_deposit_transaction(
     p: &EthersProviderWs,
@@ -24,7 +26,7 @@ async fn test_deposit_transaction(
         .await?
         .context(format!("no block for {}", block_num))?;
 
-    process_block(&block, c, f, proxy_http_url).await
+    process_block(SilentBlock(&block), c, f, proxy_http_url).await
 }
 
 #[cfg_attr(not(feature = "tests-needing-llamanodes"), ignore)]

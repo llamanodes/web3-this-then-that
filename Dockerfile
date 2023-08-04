@@ -3,7 +3,7 @@ FROM rust:1.70.0-bullseye AS rust_builder
 WORKDIR /app
 ENV CARGO_UNSTABLE_SPARSE_REGISTRY true
 ENV CARGO_TERM_COLOR always
-ENV PATH "/root/.foundry/bin:/root/.cargo/bin:${PATH}"
+ENV PATH "/root/.foundry/bin:${PATH}"
 
 # nextest runs tests in parallel (done its in own FROM so that it can run in parallel)
 FROM rust_builder as rust_nextest

@@ -1,4 +1,4 @@
-FROM rust:1.70.0-bullseye AS rust_builder
+FROM rust:1.71.0-bullseye AS rust_builder
 
 WORKDIR /app
 ENV CARGO_UNSTABLE_SPARSE_REGISTRY true

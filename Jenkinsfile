@@ -16,19 +16,6 @@ pipeline {
     stages {
         stage('build and push') {
             parallel {
-                stage('build and push amd64 image') {
-                    agent {
-                        label 'amd64'
-                    }
-                    environment {
-                        ARCH="amd64"
-                    }
-                    steps {
-                        script {
-                            myBuildandPush.buildAndPush()
-                        }
-                    }
-                }
                 stage('build and push arm64 image') {
                     agent {
                         label 'arm64'
@@ -47,17 +34,6 @@ pipeline {
         }
         stage('push latest') {
             parallel {
-                stage('maybe push latest_amd64 tag') {
-                    agent any
-                    environment {
-                        ARCH="amd64"
-                    }
-                    steps {
-                        script {
-                            myPushLatest.maybePushLatest()
-                        }
-                    }
-                }
                 stage('maybe push latest_arm64 tag') {
                     agent any
                     environment {

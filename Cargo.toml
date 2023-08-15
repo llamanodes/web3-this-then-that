@@ -9,7 +9,7 @@ edition = "2021"
 tests-needing-llamanodes = []
 
 [dependencies]
-anyhow = "1.0.72"
+anyhow = "1.0.74"
 deadpool-redis = { version = "0.12.0", features = ["rt_tokio_1", "serde"] }
 derivative = "2.2.0"
 dotenv = "0.15.0"
@@ -18,7 +18,7 @@ futures = "0.3.28"
 reqwest = { version = "0.11", features = ["json", "rustls-tls-native-roots"], default-features = false }
 sentry = { version = "0.31.5",  features = ["anyhow", "backtrace", "contexts", "panic", "reqwest", "rustls", "serde_json", "tracing"], default-features = false }
 sentry-tracing = "0.31.5"
-serde = "1.0.181"
+serde = "1.0.183"
 serde_json = "1.0.104"
 tokio = { version = "1", features = ["full", "tracing"] }
 tracing = "0.1"
@@ -27,6 +27,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [dev-dependencies]
 env_logger = "0.10"
 test-log = { version = "0.2.12", default-features = false, features = ["trace"] }
-tokio = { version = "1.29.1", features = ["full", "test-util"] }
+tokio = { version = "1.31.0", features = ["full", "test-util"] }
 tracing = {version = "0.1", default-features = false}
 tracing-subscriber = {version = "0.3", default-features = false, features = ["env-filter", "fmt"]}

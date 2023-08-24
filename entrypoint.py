@@ -1,23 +1,24 @@
+from time import sleep
+
 from ape import chain
 from ape.api import BlockAPI
-from asyncio import sleep
+from ape.logging import logger, LogLevel
 from ape.types import ContractLog
+from asyncio import sleep as async_sleep
+from requests.models import Response as Response
+from requests_ratelimiter import LimiterSession
 from silverback import SilverBackApp
 from taskiq import TaskiqState
+from urllib3.util import Retry
+from urllib3.util.retry import Retry as Retry
 from web3.utils.address import to_checksum_address
 import requests
-from urllib3.util import Retry
-from requests import Session
-from requests.adapters import HTTPAdapter
-from ape.logging import logger, LogLevel
 
-s = Session()
-retries = Retry(
-    backoff_factor=0.1,
-    backoff_jitter=0.1,
-    status_forcelist=[413, 429, 500, 502, 503, 504],
-)
-s.mount("https://", HTTPAdapter(max_retries=retries))
+
+# set up an http client with rate limits and retries
+# TODO: multiple chains on one host is going to be a problem with rate limits!
+# TODO: need an async request library with rate limiting and retries
+s = LimiterSession(per_minute=10)
 
 # initialize the app
 app = SilverBackApp()
@@ -29,7 +30,6 @@ logger.info("Starting app...")
 
 ecosystem = app.network_manager.ecosystem.name
 
-# TODO: get this from app.provider_manager or something like that
 w3p_url = f"https://{ecosystem}.llamarpc.com"
 
 status_url = f"{w3p_url}/status"
@@ -79,9 +79,7 @@ def exec_block(block: BlockAPI):
 @app.on_startup()
 def startup(state: TaskiqState):
     # TODO: include version number
-    return {
-        "message": "Starting..."
-    }
+    return {"message": "Starting..."}
 
 
 # TODO: use websocket fork instead of new_block_timeout
@@ -90,16 +88,46 @@ def startup(state: TaskiqState):
     new_block_timeout=new_block_timeout,
     start_block=factory_deploy_block,
 )
-def exec_payment_received(log: ContractLog):
+async def exec_payment_received(log: ContractLog):
     if log.contract_address == factory_address:
         post_url = f"{txid_url}/{log.transaction_hash}"
 
-        try:
-            x = s.post(post_url).json()
-        except Exception as e:
-            logger.error("Error: %s", e)
-        else:
-            logger.info("POST %s: %s", post_url, x)
+        # TODO: infinite loop here seems dangerous, but the request session has limits so we shouldn't DOS anything
+        while True:
+            try:
+                x = s.post(post_url)
+
+                x.raise_for_status()
+
+                x = x.json()
+
+                if x.get("result"):
+                    # it worked!
+                    break
+
+                error = x.get("error")
+
+                logger.warning("POST %s: %s", post_url, error)
+
+                # 'error': {'code': 429, 'message': 'too many requests from 3.17.58.153. Retry in 43 seconds'}}
+
+                if error["code"] == 429:
+                    error_data = error.get("data")
+
+                    if error_data:
+                        retry_after = error_data.get("retry_after", 60)
+                else:
+                    retry_after = 10
+
+            except Exception as e:
+                logger.error("POST %s: %s", post_url, e)
+                retry_after = 10
+
+            # slow down!
+            logger.warning("Retrying %s in %s seconds", post_url, retry_after)
+            async_sleep(retry_after)
+
+        logger.info("Successful POST %s: %s", post_url, x)
 
     return {
         "account": log.account,

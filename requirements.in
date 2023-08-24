@@ -1,4 +1,5 @@
 git+https://github.com/ApeWorX/ape.git@refs/pull/1624/head
 
 requests
+requests-ratelimiter
 silverback==0.1.0b11

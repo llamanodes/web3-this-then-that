@@ -125,7 +125,7 @@ async def exec_payment_received(log: ContractLog):
 
             # slow down!
             logger.warning("Retrying %s in %s seconds", post_url, retry_after)
-            async_sleep(retry_after)
+            await async_sleep(retry_after)
 
         logger.info("Successful POST %s: %s", post_url, x)
 

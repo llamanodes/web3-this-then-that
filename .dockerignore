@@ -1,0 +1,6 @@
+/.build/
+/.git/
+/requirements*.in
+/venv/
+
+__pycache__/

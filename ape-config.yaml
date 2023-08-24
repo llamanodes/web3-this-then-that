@@ -1,0 +1,33 @@
+name: web3-this-then-that
+
+#
+# chains
+#
+
+ethereum:
+  default_network: mainnet
+  mainnet:
+    default_provider: geth
+
+polygon:
+  mainnet:
+    default_provider: geth
+
+#
+# end chains
+#
+
+# TODO: can we put env vars into these for the rpc keys?
+geth:
+  ethereum:
+    mainnet:
+      uri: https://ethereum.llamarpc.com/rpc/${LLAMA_RPC_KEY}
+  polygon:
+    mainnet:
+      uri: https://polygon.llamarpc.com/rpc/${LLAMA_RPC_KEY}
+
+plugins:
+  - name: polygon
+    version: 0.6.5
+  - name: tokens
+    version: 0.6.2

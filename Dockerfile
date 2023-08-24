@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     set -eux; \
     \
     apt-get update; \
-    apt-get install --no-install-recommends --yes build-essential ca-certificates python3.10-venv python3.10-dev
+    apt-get install --no-install-recommends --yes build-essential ca-certificates git python3.10-venv python3.10-dev
 
 # Run everything else as the "llama" user, not root
 USER llama

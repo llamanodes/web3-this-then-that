@@ -10,6 +10,7 @@ ethereum:
     default_provider: geth
 
 polygon:
+  default_network: mainnet
   mainnet:
     default_provider: geth
 
@@ -27,6 +28,8 @@ geth:
       uri: https://polygon.llamarpc.com/rpc/${LLAMA_RPC_KEY}
 
 plugins:
+  - name: etherscan
+    version: 0.6.9
   - name: polygon
     version: 0.6.5
   - name: tokens

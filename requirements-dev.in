@@ -1,2 +1,4 @@
+-r requirements.in
+
 black
 pip-tools>=6.13.0

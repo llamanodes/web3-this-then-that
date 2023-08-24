@@ -47,12 +47,25 @@ Open an interactive shell inside docker:
 
 Inside the interactive shell, you can use silverback:
 
-    silverback run "entrypoint:app" --network :mainnet
+    silverback run "entrypoint:app" --network ethereum
+    silverback run "entrypoint:app" --network polygon
 
 Likely useful environment variables:
 
     SILVERBACK_BROKER_CLASS="taskiq:InMemoryBroker"
-    SILVERBACK_BROKER_URI=""
-    SILVERBACK_ENABLE_METRICS="False"
-    SILVERBACK_RESULT_BACKEND_CLASS=""
-    SILVERBACK_RESULT_BACKEND_URI=""
+    SILVERBACK_ENABLE_METRICS="True"
+
+    SILVERBACK_BROKER_URI=
+    SILVERBACK_RESULT_BACKEND_CLASS=
+    SILVERBACK_RESULT_BACKEND_URI=
+
+    ARBISCAN_API_KEY=
+    BASESCAN_API_KEY=
+    BSCSCAN_API_KEY=
+    ETHERSCAN_API_KEY=
+    FTMSCAN_API_KEY=
+    GNOSISSCAN_API_KEY=
+    OPTIMISTIC_ETHERSCAN_API_KEY=
+    POLYGONSCAN_API_KEY=
+    POLYGON_ZKEVM_ETHERSCAN_API_KEY=
+    SNOWTRACE_API_KEY=

@@ -92,10 +92,14 @@ def startup(state: TaskiqState):
 )
 def exec_payment_received(log: ContractLog):
     if log.contract_address == factory_address:
+        post_url = f"{txid_url}/{log.transaction_hash}"
+
         try:
-            s.post(f"{txid_url}/{log.transaction_hash}")
+            x = s.post(post_url).json()
         except Exception as e:
             logger.error("Error: %s", e)
+        else:
+            logger.info("POST %s: %s", post_url, x)
 
     return {
         "account": log.account,

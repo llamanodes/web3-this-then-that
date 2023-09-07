@@ -28,8 +28,14 @@ geth:
       uri: https://polygon.llamarpc.com/rpc/${LLAMA_RPC_KEY}
 
 plugins:
+  - name: arbitrum
+    version: 0.6.2
+  - name: bsc
+    version: 0.6.1
   - name: etherscan
     version: 0.6.9
+  - name: optimism
+    version: 0.6.2
   - name: polygon
     version: 0.6.5
   - name: tokens

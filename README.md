@@ -30,7 +30,7 @@ Run a docker image:
     # TODO: example docker-compose
     docker run \
         --rm -it \
-        --env LLAMA_RPC_KEY="your ulid from <https://llamanodes.com/dashboard>" \
+        --env WEB3_LLAMANODES_API_KEY="your ulid from <https://llamanodes.com/dashboard>" \
         --volume ~/.ape:/llama/.ape \
         --volume ~/.tokenlists:/llama/.tokenlists \
         llamanodes/web3-this-then-that
@@ -40,7 +40,7 @@ Open an interactive shell inside docker:
     docker run \
         --rm -it \
         --entrypoint bash \
-        --env LLAMA_RPC_KEY="your ulid from <https://llamanodes.com/dashboard>" \
+        --env WEB3_LLAMANODES_API_KEY="your ulid from <https://llamanodes.com/dashboard>" \
         --volume ~/.ape:/llama/.ape \
         --volume ~/.tokenlists:/llama/.tokenlists \
         llamanodes/web3-this-then-that

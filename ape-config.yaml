@@ -4,28 +4,34 @@ name: web3-this-then-that
 # chains
 #
 
+arbitrum:
+  default_network: mainnet
+  mainnet:
+    default_provider: llamanodes
+
+bsc:
+  default_network: mainnet
+  mainnet:
+    default_provider: llamanodes
+
 ethereum:
   default_network: mainnet
   mainnet:
-    default_provider: geth
+    default_provider: llamanodes
+
+optimism:
+  default_network: mainnet
+  mainnet:
+    default_provider: llamanodes
 
 polygon:
   default_network: mainnet
   mainnet:
-    default_provider: geth
+    default_provider: llamanodes
 
 #
 # end chains
 #
-
-# TODO: can we put env vars into these for the rpc keys?
-geth:
-  ethereum:
-    mainnet:
-      uri: https://ethereum.llamarpc.com/rpc/${LLAMA_RPC_KEY}
-  polygon:
-    mainnet:
-      uri: https://polygon.llamarpc.com/rpc/${LLAMA_RPC_KEY}
 
 plugins:
   - name: arbitrum
@@ -34,6 +40,8 @@ plugins:
     version: 0.6.1
   - name: etherscan
     version: 0.6.9
+  - name: llamanodes
+    version: git+https://github.com/llamanodes/ape-llamanodes.git@main
   - name: optimism
     version: 0.6.2
   - name: polygon

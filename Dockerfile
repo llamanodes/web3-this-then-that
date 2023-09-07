@@ -40,7 +40,7 @@ RUN --mount=type=bind,source=ape-config.yaml,target=/llama/ape-config.yaml \
     --mount=type=cache,uid=1000,gid=1000,target=/llama/.cache \
     set -eux; \
     \
-    ape plugins install .; \
+    ape plugins install . --yes; \
     ape networks list; \
     ape cache init --network ethereum; \
     ape cache init --network polygon

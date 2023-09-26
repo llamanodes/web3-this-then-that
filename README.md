@@ -8,16 +8,16 @@ Build the app:
 
     python3.10 -m venv venv
     . venv/bin/activate
-    pip install --upgrade pip wheel -c ./requirements-dev.txt
+    pip install --upgrade pip wheel
     pip install -r requirements-dev.txt
     ape plugins install .
 
 Update requirements:
 
-    pip-compile -U --output-file requirements-dev.txt --resolver=backtracking ./requirements-dev.in ./requirements.in
+    pip-compile -U --output-file requirements-dev.txt ./requirements-dev.in ./requirements.in
     # and then probably run: `pip install -r requirements-dev.txt`
 
-    pip-compile -U --resolver=backtracking ./requirements.in
+    pip-compile -U ./requirements.in
     # and then maybe run: `pip install -r requirements.txt`
 
 Build a docker image:

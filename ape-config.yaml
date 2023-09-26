@@ -9,6 +9,11 @@ arbitrum:
   mainnet:
     default_provider: llamanodes
 
+base:
+  default_network: mainnet
+  mainnet:
+    default_provider: llamanodes
+
 bsc:
   default_network: mainnet
   mainnet:
@@ -36,12 +41,14 @@ polygon:
 plugins:
   - name: arbitrum
     version: 0.6.2
+  - name: base
+    version: 0.6.0
   - name: bsc
     version: 0.6.1
   - name: etherscan
     version: 0.6.9
   - name: llamanodes
-    version: git+https://github.com/llamanodes/ape-llamanodes.git@main
+    version: 0.6.1
   - name: optimism
     version: 0.6.2
   - name: polygon

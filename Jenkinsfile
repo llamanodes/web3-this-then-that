@@ -25,7 +25,7 @@ pipeline {
                     }
                     steps {
                         script {
-                            myBuildandPush.buildAndPush()
+                            myBuildAndPush.buildAndPush()
                         }
                     }
                 }
